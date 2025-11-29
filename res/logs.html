@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Midplay librespot status</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    body {
+      margin: 0;
+      padding: 1.5rem;
+      max-width: 960px;
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 1.6rem;
+    }
+    section {
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      border-radius: 12px;
+      background: #1e293b;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.35);
+      border: 1px solid #334155;
+    }
+    .meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      line-height: 1.4;
+    }
+    .log-container {
+      max-height: 420px;
+      overflow-y: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      background: #0b1220;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 0.75rem;
+    }
+    .log-line {
+      white-space: pre-wrap;
+      margin: 0;
+      padding: 0.1rem 0;
+      border-bottom: 1px solid #1f2937;
+    }
+    .log-line:last-child {
+      border-bottom: none;
+    }
+    .timestamp {
+      color: #7dd3fc;
+      margin-right: 0.5rem;
+    }
+    .status-row {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.6rem;
+      border-radius: 999px;
+      font-weight: 600;
+      background: #0ea5e9;
+      color: #0b1220;
+    }
+    button {
+      background: #22c55e;
+      color: #0b1220;
+      border: none;
+      border-radius: 8px;
+      padding: 0.5rem 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 18px rgba(34, 197, 94, 0.35);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .error {
+      color: #f87171;
+    }
+  </style>
+</head>
+<body>
+  <h1>Midplay librespot status</h1>
+  <section>
+    <div class="status-row">
+      <div class="meta">
+        <div>Current track:</div>
+        <div class="badge" id="track">Loading…</div>
+      </div>
+      <div>
+        <button id="refresh">Refresh now</button>
+      </div>
+    </div>
+    <div id="error" class="error" role="alert"></div>
+  </section>
+
+  <section>
+    <h2 style="margin-top:0">Recent librespot logs</h2>
+    <div id="log" class="log-container" aria-live="polite"></div>
+  </section>
+
+  <script>
+    const trackEl = document.getElementById('track');
+    const logEl = document.getElementById('log');
+    const errorEl = document.getElementById('error');
+    const refreshBtn = document.getElementById('refresh');
+
+    const render = (data) => {
+      const { currentTrack, log } = data;
+      trackEl.textContent = `${currentTrack.artist} — ${currentTrack.title}`;
+
+      logEl.innerHTML = '';
+      log.forEach(({ time, line }) => {
+        const p = document.createElement('p');
+        p.className = 'log-line';
+        const ts = document.createElement('span');
+        ts.className = 'timestamp';
+        ts.textContent = new Date(time).toLocaleTimeString();
+        p.appendChild(ts);
+        p.appendChild(document.createTextNode(line));
+        logEl.appendChild(p);
+      });
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    const fetchLogs = async () => {
+      errorEl.textContent = '';
+      refreshBtn.disabled = true;
+      try {
+        const res = await fetch('/logs.json');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        render(data);
+      } catch (err) {
+        errorEl.textContent = `Failed to load logs: ${err.message}`;
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    };
+
+    refreshBtn.addEventListener('click', fetchLogs);
+    fetchLogs();
+    setInterval(fetchLogs, 5000);
+  </script>
+</body>
+</html>

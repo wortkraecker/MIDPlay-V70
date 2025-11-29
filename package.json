@@ -1,0 +1,12 @@
+{
+  "name": "midplay-stream-server",
+  "version": "1.0.0",
+  "description": "Express server that transcodes librespot PCM output to MP3 for MIDPlay PSP client.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

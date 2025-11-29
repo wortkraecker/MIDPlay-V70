@@ -38,6 +38,34 @@ A feature-rich online music player application developed using J2ME (Java Micro 
 ant build
 ```
 
+## Running the streaming server as a service
+
+The included `server.js` can be kept alive in the background with a systemd unit so it restarts automatically if it crashes or you disconnect your SSH session.
+
+1. Install the Node dependency once on the server:
+   ```bash
+   npm install --production
+   ```
+2. Copy the service template and edit paths/users to match your deployment (the defaults assume the repo lives in `/opt/midplay` and runs as user `midplay`):
+   ```bash
+   sudo cp tools/midplay-stream.service /etc/systemd/system/midplay-stream.service
+   sudo nano /etc/systemd/system/midplay-stream.service
+   ```
+3. Reload systemd, enable on boot, and start now. The unit uses `Restart=always` and `RestartSec=10` so it will restart 10 seconds after any crash:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now midplay-stream.service
+   ```
+4. Check status and logs:
+   ```bash
+   systemctl status midplay-stream.service
+   journalctl -u midplay-stream.service -f
+   ```
+
+   The running server also exposes a lightweight status page at `http://<host>:<port>/logs.html` (or JSON at `/logs.json`) so you can view librespot logs and the current track without SSH.
+
+Modify the `Environment=` lines in the service file if you need to point at different binaries or change the listening port/bitrate.
+
 ## Technologies Used
 
 - Java ME (J2ME) MIDP 2.0
