@@ -28,27 +28,18 @@ void NdspAudio::shutdown() {
 
 bool NdspAudio::queueSamples(const int16_t* data, size_t samples, int sampleRate, int channels) {
     if (channels != 2) return false; // expect stereo
-    // find a completed buffer slot
-    for (size_t tries = 0; tries < PCM_RING_BUFFERS; ++tries) {
-        ndspWaveBuf* wb = &waveBufs[current];
-        if (wb->status != NDSP_WBUF_DONE && wb->status != 0) {
-            current = (current + 1) % PCM_RING_BUFFERS;
-            continue;
-        }
-        size_t copySamples = samples > PCM_BUFFER_SAMPLES ? PCM_BUFFER_SAMPLES : samples;
-        memcpy(buffers[current].data(), data, copySamples * sizeof(int16_t) * channels);
-        wb->data_vaddr = buffers[current].data();
-        wb->nsamples = copySamples;
-        wb->looping = false;
-        ndspChnSetRate(0, sampleRate);
-        DSP_FlushDataCache(buffers[current].data(), copySamples * sizeof(int16_t) * channels);
-        ndspChnWaveBufAdd(0, wb);
-        current = (current + 1) % PCM_RING_BUFFERS;
-        return true;
-    }
-    return false;
+    size_t copySamples = samples > PCM_BUFFER_SAMPLES ? PCM_BUFFER_SAMPLES : samples;
+    memcpy(buffers[current].data(), data, copySamples * sizeof(int16_t) * channels);
+    ndspWaveBuf* wb = &waveBufs[current];
+    wb->data_vaddr = buffers[current].data();
+    wb->nsamples = copySamples;
+    ndspChnSetRate(0, sampleRate);
+    DSP_FlushDataCache(buffers[current].data(), copySamples * sizeof(int16_t) * channels);
+    ndspChnWaveBufAdd(0, wb);
+    current = (current + 1) % PCM_RING_BUFFERS;
+    return true;
 }
 
 void NdspAudio::update() {
-    // polling wave buffer status keeps NDSP moving; nothing else required here
+    // nothing to do; NDSP callbacks could be added if desired
 }

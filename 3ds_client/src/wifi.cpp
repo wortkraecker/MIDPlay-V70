@@ -2,7 +2,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <3ds/services/soc.h>
-#include <3ds/services/httpc.h>
 
 #define SOC_ALIGN 0x1000
 #define SOC_BUFFERSIZE 0x100000
@@ -20,19 +19,12 @@ bool WifiManager::init() {
         socBuffer = nullptr;
         return false;
     }
-    if (httpcInit(0) != 0) {
-        socExit();
-        free(socBuffer);
-        socBuffer = nullptr;
-        return false;
-    }
     ready = true;
     return true;
 }
 
 void WifiManager::shutdown() {
     if (!ready) return;
-    httpcExit();
     socExit();
     free(socBuffer);
     socBuffer = nullptr;
