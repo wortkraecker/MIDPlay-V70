@@ -1,44 +1,37 @@
-# 3DS Spotify Connect Client (2025 homebrew layout)
+# 3DS Spotify Connect Client (Homebrew)
 
-This target mirrors the PSP build but follows current (2025) Nintendo 3DS homebrew conventions: devkitPro + devkitARM, libctru for system services, citro2d/citro3d for rendering, ndsp for audio, and httpc/soc for networking. The app behaves as a Spotify Connect client against your VPS stack (librespot → ffmpeg → Node.js) and talks to these endpoints:
+This homebrew targets the Nintendo 3DS family and behaves as a Spotify Connect client talking to your remote VPS stack (librespot → ffmpeg → Node.js) that exposes:
 
-- `GET /stream.mp3` (160 kbps CBR live MP3)
+- `GET /stream.mp3` (live MP3 stream at 160kbps CBR)
 - `GET /api/status`
 - `GET /api/metadata`
 - `GET /api/cover`
 - `POST /api/play|pause|next|prev|seek|volume`
 
-## Toolchain and libraries (2025)
-- Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) via **dkp-pacman**. Required packages: `devkitARM`, `libctru`, `citro2d`, `citro3d`, `zlib`, `bannertool`, `makerom`, and (optionally) `mbedtls` or `curl` if you want HTTPS.
-- Networking: uses `socInit` + `httpcInit`. The stream itself goes over raw sockets to keep latency low; metadata/status calls use the httpc service.
-- Audio: NDSP stereo 16‑bit PCM at 44.1 kHz with four 4096-sample ring buffers.
-- UI: citro2d HUD; JPEG cover decoding expects `stb_image.h` in `src/` (see below).
+## Features
+- Wi-Fi setup and connection (via `socInit` + `ndspInit`).
+- Continuous MP3 streaming over HTTP with auto-reconnect, using minimp3 on-device decoding.
+- Ring-buffered PCM feeding NDSP with four 4096-sample stereo buffers to avoid underruns.
+- Cooperative multitasking: network + decoder + UI refresh + metadata polling.
+- Citro2D UI showing cover art, track/artist, timer, transport controls, volume bar, and connection state.
+- JPEG cover decoding via `stb_image` (CPU-side), turned into a Citro2D image.
+- Buttons: `Y` play/pause, `X` previous, `A` next, D-Pad up/down for volume, `B` reconnect stream, `START` quits.
 
-## Bringing in codecs/assets
-- MP3 decoding: drop the official **minimp3.h** from https://github.com/lieff/minimp3 into `3ds_client/minimp3/` (the stub here only builds; replace it to get actual audio).
-- JPEG decode: add the upstream **stb_image.h** into `3ds_client/src/` to enable cover art uploads (the included stub only compiles). Disable `STBI_NO_LINEAR`/`STBI_NO_HDR` to keep footprint low.
-- Optional ROMFS assets (for CIA banners/icons): `romfs/app.icon.png`, `romfs/banner.png`, `romfs/banner_audio.wav`, plus a `cia.rsf` manifest.
-
-## Building (.3dsx and CIA)
-```bash
-# one-time: ensure DEVKITPRO/DEVKITARM env vars are set by dkp-pacman shell
-cd 3ds_client
-make            # builds 3ds_spotify.3dsx
-make cia        # builds a CIA if bannertool & makerom are in PATH
-```
+## Building
+1. Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) with devkitARM, libctru, citro2d/citro3d, and zlib. Install bannertool and makerom if you want a CIA.
+2. Place `minimp3.h` inside `minimp3/` (already stubbed here; replace with upstream if desired) and drop the full upstream `stb_image.h` into `src/` to enable JPEG cover decoding (the included stub only compiles; it does not decode).
+3. (Optional) Add romfs assets: `romfs/app.icon.png`, `romfs/banner.png`, `romfs/banner_audio.wav`, and `cia.rsf` for custom title info.
+4. Build:
+   ```bash
+   cd 3ds_client
+   make        # builds 3ds_spotify.3dsx
+   make cia    # builds a CIA if bannertool+makerom are present
+   ```
 
 ## Running
-1. Edit `src/utils.h` to point `SERVER_IP`/`SERVER_PORT` at your VPS (port 4000 by default).
-2. Copy `3ds_spotify.3dsx` to the SD card (`/3ds/`) or install the CIA with FBI.
-3. Launch from the Homebrew Menu. The app auto-connects Wi‑Fi, opens `/stream.mp3`, decodes on-device, feeds NDSP, and refreshes metadata once per second.
-
-## Controls
-- **Y** play/pause, **X** previous, **A** next
-- **D‑Pad Up/Down** volume +/-
-- **B** manual reconnect to `/stream.mp3`
-- **START** quit
+Copy `3ds_spotify.3dsx` to your SD (`/3ds/` homebrew folder) or install the CIA via FBI. Ensure the console is connected to the same network as the server and update `SERVER_IP`/`SERVER_PORT` in `src/utils.h`.
 
 ## Notes
-- The audio thread decodes continuously; UI stays responsive in the main loop.
-- If the stream stalls, the worker auto-reconnects after a short timeout.
-- Replace the codec stubs with the upstream files for real playback and cover rendering; the rest of the code is production-ready for devkitPro 2025.
+- Audio uses NDSP in stereo 16-bit PCM, 44.1kHz.
+- Metadata polling is once per second; cover art is refreshed on track change only.
+- The code avoids dynamic allocations in the hot path; network dropouts trigger a reconnect to `/stream.mp3` while UI stays responsive.

@@ -1,38 +1,44 @@
-# 3DS Spotify Connect client Makefile (2025 devkitPro layout)
-# Requires: devkitPro (dkp-pacman), devkitARM, libctru, citro2d, citro3d, ndsp, httpc, soc.
+# 3DS Spotify Connect client Makefile
+# Requires devkitPro with devkitARM, libctru, citro2d/citro3d, and zlib.
 
-TARGET        := 3ds_spotify
-BUILD         := build
-SOURCES       := src
-INCLUDES      := src minimp3
-ROMFS         := romfs
-APP_TITLE     := Spotify Connect 3DS
-APP_DESCRIPTION := Stream and control Spotify Connect via remote server
-APP_AUTHOR    := MIDPlay
-APP_VERSION   := 0.2.0
-
-# pull in common rules
 include $(DEVKITPRO)/libctru/3ds_rules
 
-# libraries (order matters)
-LIBS          := -lcitro2d -lcitro3d -lctru -lhttpc -lsoc -lm -lz
-# enable if you swap sockets for mbedtls/curl
-# LIBS        += -lmbedtls -lmbedx509 -lmbedcrypto -lcurl
+TARGET:= 3ds_spotify
+BUILD:= build
+SOURCES:= src
+INCLUDES:= src minimp3
+ROMFS:= romfs
 
-CFLAGS        := -Wall -Wextra -Wno-psabi -O2 -std=c11 -ffunction-sections -fdata-sections
-CXXFLAGS      := -Wall -Wextra -Wno-psabi -O2 -std=c++17 -ffunction-sections -fdata-sections -fno-rtti -fno-exceptions
-CFLAGS        += $(INCLUDE)
-CXXFLAGS      += $(INCLUDE)
+LIBS:= -lcitro2d -lcitro3d -lctru -lm -lz
+# mbedTLS may be used for HTTPS metadata if needed
+# LIBS      += -lmbedtls -lmbedx509 -lmbedcrypto
 
-LDFLAGS       := -specs=3dsx.specs -g -Wl,--gc-sections
+CFLAGS:= -Wall -Wextra -O2 -std=c++17 -ffunction-sections -fdata-sections -D__3DS__
+CFLAGS+= $(INCLUDE) -DMINIMP3_IMPLEMENTATION
+CXXFLAGS:= $(CFLAGS)
+
+LDFLAGS:= -specs=3dsx.specs -g -Wl,--gc-sections
+
+# Assets copied into romfs (e.g., default cover placeholder)
+# Create romfs directory if you want bundled assets
+
+# Additional libraries
+LIBDIRS:=
 
 .PHONY: all cia clean
+
 all: $(TARGET).3dsx
+
 cia: $(TARGET).cia
 
-# Optional CIA packaging (bannertool + makerom must be in PATH)
+$(BUILD):
+@mkdir -p $@
+
+# Use built-in 3ds_rules logic
+
+# CIA packaging using bannertool + makerom (must be installed)
 icon.icn: romfs/app.icon.png
-bannertool makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i $< -o $@
+bannertool makesmdh -s "Spotify Connect" -l "3DS Client" -p "MIDPlay" -i $< -o $@
 
 banner.bnr: romfs/banner.png
 bannertool makebanner -i $< -a romfs/banner_audio.wav -o $@

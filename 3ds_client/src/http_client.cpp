@@ -1,6 +1,5 @@
 #include "http_client.h"
 #include "utils.h"
-#include <3ds/services/httpc.h>
 #include <cstring>
 #include <cstdio>
 #include <arpa/inet.h>
@@ -10,62 +9,87 @@
 HttpClient::HttpClient() {}
 
 bool HttpClient::init() {
+    // socInit must be called once in the app; done in main
     return true;
 }
 
-void HttpClient::exit() {}
-
-static Result http_download(httpcContext* ctx, HttpResponse& out) {
-    Result rc = httpcBeginRequest(ctx);
-    if (R_FAILED(rc)) return rc;
-
-    u32 statusCode = 0;
-    rc = httpcGetResponseStatusCode(ctx, &statusCode);
-    if (R_FAILED(rc)) return rc;
-    out.status = (int)statusCode;
-
-    u32 chunkSize = 0;
-    do {
-        rc = httpcDownloadData(ctx, nullptr, 0, &chunkSize);
-        if (R_FAILED(rc) && rc != HTTPC_RESULTCODE_DOWNLOADPENDING) break;
-        if (chunkSize) {
-            size_t cur = out.body.size();
-            out.body.resize(cur + chunkSize);
-            size_t downloaded = 0;
-            rc = httpcDownloadData(ctx, out.body.data() + cur, chunkSize, &downloaded);
-            if (R_FAILED(rc)) break;
-            out.body.resize(cur + downloaded);
-        }
-    } while (chunkSize > 0 || rc == HTTPC_RESULTCODE_DOWNLOADPENDING);
-    return rc;
+void HttpClient::exit() {
 }
 
-bool HttpClient::request(const std::string& method, const std::string& path, const std::string& payload, HttpResponse& out) {
-    httpcContext ctx;
-    Result rc = httpcOpenContext(&ctx, method == "POST" ? HTTPC_METHOD_POST : HTTPC_METHOD_GET,
-                                 (http_base() + path).c_str(), 1);
-    if (R_FAILED(rc)) return false;
-
-    httpcSetKeepAlive(&ctx, HTTPC_KEEPALIVE_ENABLED);
-    if (!payload.empty()) {
-        httpcSetPostDataRaw(&ctx, (u32*)payload.data(), payload.size());
-    }
-
-    rc = http_download(&ctx, out);
-    httpcCloseContext(&ctx);
-    return R_SUCCEEDED(rc) && out.status == 200;
-}
-
-bool HttpClient::get(const std::string& path, HttpResponse& out) { return request("GET", path, "", out); }
-bool HttpClient::post(const std::string& path, const std::string& payload, HttpResponse& out) { return request("POST", path, payload, out); }
-
-// --- streaming over raw sockets for lower latency ---
 bool HttpClient::resolve(addrinfo** res) {
     addrinfo hints{};
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    int rc = getaddrinfo(http_host().c_str(), std::to_string(SERVER_PORT).c_str(), &hints, res);
+    std::string host = http_host();
+    int rc = getaddrinfo(host.c_str(), std::to_string(SERVER_PORT).c_str(), &hints, res);
     return rc == 0;
+}
+
+bool HttpClient::request(const std::string& method, const std::string& path, const std::string& payload, HttpResponse& out) {
+    addrinfo* res = nullptr;
+    if (!resolve(&res)) return false;
+    int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sock < 0) { freeaddrinfo(res); return false; }
+
+    if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
+        close(sock); freeaddrinfo(res); return false; }
+
+    char hdr[512];
+    int hdr_len = snprintf(hdr, sizeof(hdr), "%s %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\nContent-Length: %zu\r\n\r\n",
+                           method.c_str(), path.c_str(), SERVER_IP, SERVER_PORT, payload.size());
+    std::vector<u8> buf;
+    buf.reserve(hdr_len + payload.size());
+    buf.insert(buf.end(), (u8*)hdr, (u8*)hdr + hdr_len);
+    buf.insert(buf.end(), payload.begin(), payload.end());
+
+    ssize_t sent = send(sock, buf.data(), buf.size(), 0);
+    if (sent < 0) { close(sock); freeaddrinfo(res); return false; }
+
+    // Simple HTTP response parsing (status + body)
+    std::string header;
+    char tmp[512];
+    int status = 0;
+    while (true) {
+        ssize_t r = recv(sock, tmp, sizeof(tmp), 0);
+        if (r <= 0) break;
+        header.append(tmp, tmp + r);
+        size_t pos = header.find("\r\n\r\n");
+        if (pos != std::string::npos) {
+            std::string head = header.substr(0, pos);
+            size_t bodyStart = pos + 4;
+            // parse status
+            size_t sp = head.find(' ');
+            if (sp != std::string::npos && head.size() > sp + 4) {
+                status = std::atoi(head.substr(sp + 1, 3).c_str());
+            }
+            // content-type
+            size_t ct = head.find("Content-Type:");
+            if (ct != std::string::npos) {
+                size_t end = head.find("\r\n", ct);
+                out.contentType = head.substr(ct + 13, end - ct - 13);
+            }
+            out.status = status;
+            out.body.insert(out.body.end(), header.begin() + bodyStart, header.end());
+            break;
+        }
+    }
+    // read rest
+    while (true) {
+        ssize_t r = recv(sock, tmp, sizeof(tmp), 0);
+        if (r <= 0) break;
+        out.body.insert(out.body.end(), (u8*)tmp, (u8*)tmp + r);
+    }
+    close(sock);
+    freeaddrinfo(res);
+    return status == 200;
+}
+
+bool HttpClient::get(const std::string& path, HttpResponse& out) {
+    return request("GET", path, "", out);
+}
+
+bool HttpClient::post(const std::string& path, const std::string& payload, HttpResponse& out) {
+    return request("POST", path, payload, out);
 }
 
 int HttpClient::openStream(const std::string& path) {
@@ -94,8 +118,10 @@ int HttpClient::openStream(const std::string& path) {
 int HttpClient::readStream(int sock, u8* dst, size_t maxLen) {
     if (sock < 0) return -1;
     ssize_t r = recv(sock, dst, maxLen, 0);
-    if (r <= 0) return -1;
+    if (r == 0) return -1; // closed
     return (int)r;
 }
 
-void HttpClient::closeStream(int sock) { if (sock >= 0) close(sock); }
+void HttpClient::closeStream(int sock) {
+    if (sock >= 0) close(sock);
+}

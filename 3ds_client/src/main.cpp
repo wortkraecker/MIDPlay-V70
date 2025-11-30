@@ -1,5 +1,6 @@
 #include <3ds.h>
 #include <citro2d.h>
+#include <vector>
 #include <string>
 #include "utils.h"
 #include "wifi.h"
@@ -10,7 +11,7 @@
 #include "ui.h"
 
 static bool fetch_metadata(HttpClient& http, Metadata& meta) {
-    HttpResponse resp{};
+    HttpResponse resp;
     if (!http.get("/api/metadata", resp)) return false;
     std::string body(resp.body.begin(), resp.body.end());
     meta.parseJson(body);
@@ -18,22 +19,23 @@ static bool fetch_metadata(HttpClient& http, Metadata& meta) {
 }
 
 static bool fetch_status(HttpClient& http, Metadata& meta) {
-    HttpResponse resp{};
+    HttpResponse resp;
     if (!http.get("/api/status", resp)) return false;
     std::string body(resp.body.begin(), resp.body.end());
+    // update position/playing/volume
     meta.parseJson(body);
     return true;
 }
 
 static bool fetch_cover(HttpClient& http, Metadata& meta) {
-    HttpResponse resp{};
+    HttpResponse resp;
     if (!http.get("/api/cover", resp)) return false;
     meta.coverJpeg = resp.body;
     return true;
 }
 
 static void post_action(HttpClient& http, const char* path, const std::string& payload = "") {
-    HttpResponse resp{};
+    HttpResponse resp;
     http.post(path, payload, resp);
 }
 
@@ -61,7 +63,6 @@ int main(int argc, char** argv) {
 
     AudioStream stream;
     stream.init(&http, &audio);
-    stream.start();
 
     UI ui;
     ui.init();
@@ -93,6 +94,9 @@ int main(int argc, char** argv) {
 
         u64 now = now_ms();
         if (now - lastMetaPoll > 1000) {
+            if (!stream.isStreaming()) {
+                stream.reconnect();
+            }
             fetch_status(http, meta);
             fetch_metadata(http, meta);
             if (meta.track != lastTrack) {
