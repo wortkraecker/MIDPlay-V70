@@ -1,0 +1,20 @@
+[Unit]
+Description=Midplay librespot->MP3 streaming server
+After=network.target
+
+[Service]
+Type=simple
+# Update these paths/usernames to match your deployment
+WorkingDirectory=/opt/midplay
+ExecStart=/usr/bin/env node /opt/midplay/server.js
+Environment=PORT=4000
+Environment=LIBRESPOT_BIN=/usr/local/bin/librespot
+Environment=FFMPEG_BIN=ffmpeg
+Environment=MP3_BITRATE=160k
+User=midplay
+Group=midplay
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
